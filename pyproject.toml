@@ -1,0 +1,17 @@
+[project]
+name = "ppca-torch"
+version = "0.0.1"
+description = "Probabilistic PCA (PPCA) written in torch"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [ { name = "siemovit", email = "example@example.com" } ]
+dependencies = [
+    "torch>=2.0.0", 
+    "scikit-learn>=1.2.0",
+    "matplotlib>=3.7.0",
+    "numpy>=1.24.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/siemovit/ppca-torch"
+Source = "https://github.com/siemovit/ppca-torch"
