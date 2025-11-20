@@ -3,10 +3,12 @@ import torch.nn as nn
 from torch.distributions.multivariate_normal import MultivariateNormal
 
 class PPCA(nn.Module):
-    def __init__(self, n_components=3, method='svd'):
+    def __init__(self, n_components=3, method='svd', max_iter=20, stopping_criterion=1e-6):
         super(PPCA, self).__init__()
-        self.method = method
         self.n_components = n_components
+        self.method = method
+        self.max_iter = max_iter
+        self.stopping_criterion = stopping_criterion
         
     def fit(self, X):
         # Ensure X is a tensor
@@ -16,6 +18,10 @@ class PPCA(nn.Module):
         # SVD
         if self.method == 'svd':
             self._fit_eig_decomp(X)
+        # EM
+        elif self.method == 'em':
+            self._fit_em(X)
+        # Other methods can be added here
         else:
             raise NotImplementedError(f"Method {self.method} not implemented.")
     
@@ -54,6 +60,68 @@ class PPCA(nn.Module):
         adjust = torch.clamp(adjust, min=0.0)
         self.W = U_q @ torch.sqrt(adjust) 
         
+    def _e_step(self, X):
+        # E-step: compute expected values of latent variables given current parameters 
+        # (Bishop, Tipping, 1999 - Eq. 25, 26)
+        self.M = self.W.transpose(0, 1) @ self.W + self.sigma2 * torch.eye(self.n_components, device=X.device)
+        self.M_inv = torch.linalg.inv(self.M)
+        
+        # the paper uses "x" to denote "z" (latent variables)
+        self.x = self.M_inv @ torch.t(self.W) @ torch.t((X - self.mu))  # k x N
+        self.xxT = self.sigma2 * self.M_inv + self.x @ self.x.transpose(0, 1)  # k x k
+        
+    def _m_step(self, X):
+        # M-step: update parameters W, mu, sigma2 based on expected values from E-step
+        N = X.shape[0]
+        d = X.shape[1]
+        # (Bishop, Tipping, 1999 - Eq. 27, 28)
+        # self.W = torch.sum((X - self.mu).transpose(0, 1) @ self.x.transpose(0, 1), dim=0) @ torch.sum(torch.linalg.inv(self.xxT), dim=0)
+        # self.sigma2 = (1.0 / (N * d)) * torch.sum(torch.linalg.norm(X - self.mu)**2 - 2*self.x.transpose(0, 1) @ self.W.transpose(0, 1) @ (X - self.mu).transpose(0, 1) + torch.trace(self.xxT @ (self.W.transpose(0, 1) @ self.W)))
+        
+        # another way to look at it from Bishop, Tipping, 1999 - Eq. 29, 30, 31
+        # Compute centered data once
+        Xc = X - self.mu  # shape (N, d)
+
+        # Efficient computation of SW = S @ W without forming S explicitly:
+        # SW = (1/N) * Xc^T @ (Xc @ W) -> cost O(N d q)
+        SW = (1.0 / N) * Xc.transpose(0, 1) @ (Xc @ self.W)  # shape (d, q)
+
+        # Compute trace(S) cheaply: tr(S) = (1/N) * sum_i ||x_i - mu||^2
+        trS = torch.sum(Xc * Xc) / N
+
+        self.Ik = torch.eye(self.n_components, device=X.device)
+
+        # Use SW and trS in the updates (avoid explicit S)
+        WT_SW = self.W.transpose(0, 1) @ SW  # q x q
+        den = self.sigma2 * self.Ik + self.M_inv @ WT_SW  # q x q
+        W_hat = SW @ torch.linalg.inv(den)  # d x q
+
+        # sigma2 update using trace identity (avoid forming S explicitly)
+        # old: sigma2 = (1/d) * trace(S - S W M_inv W_hat^T)
+        # note: S W = SW, so second term = trace(M_inv W_hat^T SW)
+        self.sigma2 = (1.0 / d) * (trS - torch.trace(self.M_inv @ torch.t(W_hat) @ SW))
+
+        self.W = W_hat
+        
+    def _fit_em(self, X):
+        # initialize parameters
+        N, d = X.shape
+        self.mu = torch.mean(X, dim=0)  # shape (d,)
+        self.W = torch.randn(d, self.n_components, device=X.device)  # random initialization
+        self.sigma2 = torch.tensor(1.0, device=X.device)
+        print("Starting EM fitting...")
+        for iter in range(self.max_iter):
+            W = self.W
+            # E-step: compute expected values of latent variables given current parameters
+            self._e_step(X)
+
+            # M-step: update parameters W, mu, sigma2 based on expected values from E-step
+            self._m_step(X)
+            
+            # Stopping criterion based on change in W
+            if torch.norm(self.W - W) < self.stopping_criterion:
+                break
+            
     def transform(self, X):
         # Ensure X is a tensor
         if not isinstance(X, torch.Tensor):

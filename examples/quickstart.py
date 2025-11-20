@@ -1,6 +1,7 @@
 from ppca import PPCA
 import matplotlib.pyplot as plt
 from sklearn.datasets import load_iris,load_breast_cancer,load_wine
+import argparse
 
 # Loading data
 # data = load_iris()
@@ -8,7 +9,17 @@ from sklearn.datasets import load_iris,load_breast_cancer,load_wine
 data = load_wine()
 
 X, y = data['data'], data['target']
-pca = PPCA(n_components=2, method='svd')
+
+# Parse CLI args for n_components and method
+parser = argparse.ArgumentParser(description='Quickstart PPCA example')
+parser.add_argument('--n_components', '-n', type=int, default=2,
+                    help='Number of principal components (default: 2)')
+parser.add_argument('--method', '-m', type=str, default='svd',
+                    help='PPCA method to use, e.g. "svd" (default: svd)')
+args = parser.parse_args()
+
+# Use parsed arguments
+pca = PPCA(n_components=args.n_components, method=args.method)
 Xt = pca.fit_transform(X)
 
 # Plot
