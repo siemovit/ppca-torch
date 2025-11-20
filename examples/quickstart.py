@@ -9,17 +9,18 @@ import argparse
 data = load_wine()
 
 X, y = data['data'], data['target']
-
 # Parse CLI args for n_components and method
 parser = argparse.ArgumentParser(description='Quickstart PPCA example')
 parser.add_argument('--n_components', '-n', type=int, default=2,
                     help='Number of principal components (default: 2)')
 parser.add_argument('--method', '-m', type=str, default='svd',
                     help='PPCA method to use, e.g. "svd" (default: svd)')
+parser.add_argument('--epochs', '-e', type=int, default=200,
+                    help='Number of epochs for EM method (default: 200)')
 args = parser.parse_args()
 
 # Use parsed arguments
-pca = PPCA(n_components=args.n_components, method=args.method)
+pca = PPCA(n_components=args.n_components, method=args.method, max_iter=args.epochs)
 Xt = pca.fit_transform(X)
 
 # Plot

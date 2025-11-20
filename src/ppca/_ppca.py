@@ -1,14 +1,16 @@
 import torch
 import torch.nn as nn
 from torch.distributions.multivariate_normal import MultivariateNormal
+import tqdm
 
 class PPCA(nn.Module):
-    def __init__(self, n_components=3, method='svd', max_iter=20, stopping_criterion=1e-6):
+    def __init__(self, n_components=3, method='svd', max_iter=200, stopping_criterion=1e-6):
         super(PPCA, self).__init__()
         self.n_components = n_components
         self.method = method
         self.max_iter = max_iter
         self.stopping_criterion = stopping_criterion
+        print(f"PPCA initialized with n_components={n_components}, method={method}")
         
     def fit(self, X):
         # Ensure X is a tensor
@@ -61,8 +63,12 @@ class PPCA(nn.Module):
         self.W = U_q @ torch.sqrt(adjust) 
         
     def _e_step(self, X):
-        # E-step: compute expected values of latent variables given current parameters 
-        # (Bishop, Tipping, 1999 - Eq. 25, 26)
+        """E-step: compute expected values of latent variables given current parameters 
+        Bishop, Tipping, 1999 - Eq. 25, 26
+
+        Args:
+            X (tensor): data of shape (N, d)
+        """
         self.M = self.W.transpose(0, 1) @ self.W + self.sigma2 * torch.eye(self.n_components, device=X.device)
         self.M_inv = torch.linalg.inv(self.M)
         
@@ -70,37 +76,60 @@ class PPCA(nn.Module):
         self.x = self.M_inv @ torch.t(self.W) @ torch.t((X - self.mu))  # k x N
         self.xxT = self.sigma2 * self.M_inv + self.x @ self.x.transpose(0, 1)  # k x k
         
-    def _m_step(self, X):
+    def _m_step(self, X, compute_SW=True):
+        """M-step: update parameters W, mu, sigma2 based on expected values from E-step
+
+        Args:
+            X (tensor): data of shape (N, d)
+            compute_SW (bool, optional): compute S @ W directly or not.
+                When q << d, considerable computational savings might be obtained by not explicitly evaluating S, even though this need only be done once at initialization. 
+                The computation of S requires O(Nd²) operations, but an inspection of equations (27) and (28) indicates that the complexity is only O(Ndq). 
+                This is reflected by the fact that equations (29) and (30) only require terms of the form SW and tr(S). 
+                
+                For the former, computing SW as Σ,, x,(xW) is O(Ndq) and so more
+                efficient than (Σ, x,x)W, which is equivalent to finding S explicitly. 
+                
+                The trade-off between the cost of initially computing S directly and that of computing SW more cheaply at each iteration will clearly
+                depend on the number of iterations needed to obtain the accuracy of solution required and the ratio of d to q.
+                
+                Defaults to True.
+        """
         # M-step: update parameters W, mu, sigma2 based on expected values from E-step
         N = X.shape[0]
         d = X.shape[1]
-        # (Bishop, Tipping, 1999 - Eq. 27, 28)
-        # self.W = torch.sum((X - self.mu).transpose(0, 1) @ self.x.transpose(0, 1), dim=0) @ torch.sum(torch.linalg.inv(self.xxT), dim=0)
-        # self.sigma2 = (1.0 / (N * d)) * torch.sum(torch.linalg.norm(X - self.mu)**2 - 2*self.x.transpose(0, 1) @ self.W.transpose(0, 1) @ (X - self.mu).transpose(0, 1) + torch.trace(self.xxT @ (self.W.transpose(0, 1) @ self.W)))
         
-        # another way to look at it from Bishop, Tipping, 1999 - Eq. 29, 30, 31
-        # Compute centered data once
-        Xc = X - self.mu  # shape (N, d)
-
-        # Efficient computation of SW = S @ W without forming S explicitly:
-        # SW = (1/N) * Xc^T @ (Xc @ W) -> cost O(N d q)
-        SW = (1.0 / N) * Xc.transpose(0, 1) @ (Xc @ self.W)  # shape (d, q)
-
-        # Compute trace(S) cheaply: tr(S) = (1/N) * sum_i ||x_i - mu||^2
-        trS = torch.sum(Xc * Xc) / N
-
+        # Using Bishop, Tipping, 1999 - Eq. 29, 30, 31
         self.Ik = torch.eye(self.n_components, device=X.device)
-
-        # Use SW and trS in the updates (avoid explicit S)
-        WT_SW = self.W.transpose(0, 1) @ SW  # q x q
-        den = self.sigma2 * self.Ik + self.M_inv @ WT_SW  # q x q
-        W_hat = SW @ torch.linalg.inv(den)  # d x q
-
-        # sigma2 update using trace identity (avoid forming S explicitly)
-        # old: sigma2 = (1/d) * trace(S - S W M_inv W_hat^T)
-        # note: S W = SW, so second term = trace(M_inv W_hat^T SW)
-        self.sigma2 = (1.0 / d) * (trS - torch.trace(self.M_inv @ torch.t(W_hat) @ SW))
-
+        
+        if compute_SW is False:
+            self.S = (1.0 / N) * torch.t(X - self.mu) @ (X - self.mu)  # shape (d, d)
+            W_hat = self.S @ self.W @ torch.linalg.inv(self.sigma2 * self.Ik + self.M_inv @ torch.t(self.W) @ self.S @ self.W)
+            self.sigma2 = (1.0 / d) * torch.trace(self.S - self.S @ self.W @ self.M_inv @ torch.t(W_hat))
+            
+        else: 
+            # Efficient branch: avoid forming full d x d covariance S.
+            # Centered data
+            Xc = X - self.mu  # shape (N, d)
+            
+            # SW = (1/N) * Xc^T @ (Xc @ W)  -> shape (d, q), cost O(N d q)
+            SW = (1.0 / N) * Xc.transpose(0, 1) @ (Xc @ self.W)  # d x q
+            
+            # trace(S) = (1/N) * sum_i ||x_i - mu||^2
+            trS = torch.sum(Xc * Xc) / N  # scalar
+            
+            # Precompute W^T @ SW (q x q)
+            WT_SW = self.W.transpose(0, 1) @ SW  # q x q
+            
+            # Denominator for W update: sigma2 * I + M_inv @ (W^T SW)
+            den = self.sigma2 * self.Ik + self.M_inv @ WT_SW  # q x q
+            
+            # Compute W_hat efficiently
+            W_hat = SW @ torch.linalg.inv(den)  # d x q
+            
+            # sigma2 update using trace identity: avoid explicit S
+            # sigma2 = (1/d) * (tr(S) - trace(M_inv @ W_hat^T @ SW))
+            self.sigma2 = (1.0 / d) * (trS - torch.trace(self.M_inv @ torch.t(W_hat) @ SW))
+		
         self.W = W_hat
         
     def _fit_em(self, X):
@@ -109,19 +138,27 @@ class PPCA(nn.Module):
         self.mu = torch.mean(X, dim=0)  # shape (d,)
         self.W = torch.randn(d, self.n_components, device=X.device)  # random initialization
         self.sigma2 = torch.tensor(1.0, device=X.device)
-        print("Starting EM fitting...")
-        for iter in range(self.max_iter):
+        print("Starting EM fitting on {} epochs...".format(self.max_iter))
+        pbar = tqdm.tqdm(range(self.max_iter), desc="EM", unit="iter")
+        for iter in pbar:
             W = self.W
-            # E-step: compute expected values of latent variables given current parameters
             self._e_step(X)
-
-            # M-step: update parameters W, mu, sigma2 based on expected values from E-step
             self._m_step(X)
-            
+
             # Stopping criterion based on change in W
-            if torch.norm(self.W - W) < self.stopping_criterion:
+            W_norm_diff = torch.norm(self.W - W)
+
+            # Update progress bar postfix with the latest change norm
+            try:
+                pbar.set_postfix({"W_change": float(W_norm_diff.item())})
+            except Exception:
+                # In case of any issue converting tensor to float, ignore
+                pass
+
+            if W_norm_diff < self.stopping_criterion:
+                pbar.close()
                 break
-            
+
     def transform(self, X):
         # Ensure X is a tensor
         if not isinstance(X, torch.Tensor):
