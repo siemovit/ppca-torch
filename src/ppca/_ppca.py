@@ -128,6 +128,7 @@ class PPCA(nn.Module):
             
             # sigma2 update using trace identity: avoid explicit S
             # sigma2 = (1/d) * (tr(S) - trace(M_inv @ W_hat^T @ SW))
+            # TODO: verify correctness of this expression
             self.sigma2 = (1.0 / d) * (trS - torch.trace(self.M_inv @ torch.t(W_hat) @ SW))
 		
         self.W = W_hat
@@ -186,10 +187,34 @@ class PPCA(nn.Module):
             Xt[i] = sample
 
         return Xt
-           
-    def inverse_transform(self, X_transformed):
-        # Implement the inverse transformation procedure for PPCA
-        pass
+    
+    def sample(self, n_samples):
+        """Sample n_samples from the PPCA model
+        
+        With the marginal distribution over the latent variables also Gaussian and conventionally
+        defined by x ~ N(0, I), the marginal distribution for the observed data t is readily obtained
+        by integrating out the latent variables and is likewise Gaussian: t ~ N(μ, C) where C = W*W^T + sigma2*I
+
+        Args:
+            N (int): Number of samples to generate
+            
+        """
+        self.C = self.W @ self.W.transpose(0, 1) + self.sigma2 * torch.eye(self.W.shape[0], device=self.W.device)
+        if self.mu is None:
+            raise ValueError("Model must be fitted before generating samples.")
+        generated_samples = MultivariateNormal(self.mu, self.C).sample((n_samples,))
+        
+        return generated_samples
+    
+    def sample_transform(self, n_samples):
+        """Sample N points from the PPCA model and transform them to the latent space
+
+        Args:
+            n_samples (int): Number of samples to generate and transform
+        Returns:
+            torch.Tensor: Transformed samples in the latent space
+        """
+        return self.transform(self.sample(n_samples))   
     
     def fit_transform(self, X):
         self.fit(X)
