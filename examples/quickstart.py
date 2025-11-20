@@ -24,9 +24,6 @@ args = parser.parse_args()
 pca = PPCA(n_components=args.n_components, method=args.method, max_iter=args.epochs)
 Xt = pca.fit_transform(X)
 
-print("y shape:", y.shape)
-print("n_components:", args.n_components)
-
 pca_sklearn = PCA(n_components=args.n_components)
 Xt_sklearn = pca_sklearn.fit_transform(X)
 
