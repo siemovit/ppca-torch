@@ -29,6 +29,8 @@ class PPCA(nn.Module):
         
         # Sample covariance matrix (Bishop, Tipping, 1999 - Eq. 5)
         # Use D x D covariance: S = (1/N) * (X - mu)^T (X - mu)
+        # TODO: understand why (X - mu)^T (X - mu) and not (X - mu) (X - mu)^T like in the paper
+        # NB: I guess the paper data as columns (D×N), so their (X - mu)(X - mu)^T corresponds to our (X - mu)^T (X - mu)
         S = (1.0 / N) * (X - self.mu).transpose(0, 1) @ (X - self.mu)  # shape (D, D)
 
         # Eigen decomposition for symmetric matrix -> real eigenvalues/eigenvectors
@@ -56,10 +58,9 @@ class PPCA(nn.Module):
         # Ensure X is a tensor
         if not isinstance(X, torch.Tensor):
             X = torch.tensor(X, dtype=torch.float32)
-            
+
         # We sample X from it's conditional distribution (observation model)
         # For that, we sample from a Gaussian N(x|W*z+mu, sigma2*I) (Bishop, Tipping, 1999 - Eq. 6)
-        
         N = X.shape[0]
         k = self.n_components
         Xt = torch.zeros((N, k), device=X.device)  # shape (N, k)
@@ -69,6 +70,8 @@ class PPCA(nn.Module):
         M_inv = torch.linalg.inv(M)
 
         # Gaussian posterior parameters for latent z: mean (k x N), cov (k x k)
+        # TODO: understand why (X - mu)^T and not (X - mu) like in the paper
+        # NB: in the original paper data are columns (D×N), so their (X - mu) corresponds to our (X - mu)^T
         transform_means = M_inv @ self.W.transpose(0, 1) @ (X - self.mu).transpose(0, 1)  # k x N
         transform_covariances = self.sigma2 * M_inv  # k x k
 
