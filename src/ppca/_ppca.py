@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.distributions.multivariate_normal import MultivariateNormal
 import tqdm
+from sklearn.decomposition import PCA
 
 class PPCA(nn.Module):
     def __init__(self, n_components=3, method='svd', max_iter=200, stopping_criterion=1e-6):
@@ -29,8 +30,18 @@ class PPCA(nn.Module):
         # SGD
         elif self.method == 'sgd':
             self._fit_sgd(X)
+        # BASELINE
+        elif self.method == 'baseline':
+            self._fit_baseline(X)
+
         else:
             raise NotImplementedError(f"Method {self.method} not implemented.")
+        
+    def _fit_baseline(self, X):
+        self.pca = PCA(n_components=self.n_components).fit(X.numpy())
+        self.W = torch.tensor(self.pca.components_.T, dtype=torch.float32)
+        self.mu = torch.tensor(self.pca.mean_, dtype=torch.float32)
+        self.sigma2 = torch.tensor(0.0, dtype=torch.float32)
     
     def _fit_eig_decomp(self, X):
         # Define N and D
@@ -229,29 +240,33 @@ class PPCA(nn.Module):
         # Ensure X is a tensor
         if not isinstance(X, torch.Tensor):
             X = torch.tensor(X, dtype=torch.float32)
+            
+        if self.method == 'baseline':
+            return self.pca.transform(X.numpy())
+        
+        else:
+            # We sample X from it's conditional distribution (observation model)
+            # For that, we sample from a Gaussian N(x|W*z+mu, sigma2*I) (Bishop, Tipping, 1999 - Eq. 6)
+            N = X.shape[0]
+            k = self.n_components
+            Xt = torch.zeros((N, k), device=X.device)  # shape (N, k)
 
-        # We sample X from it's conditional distribution (observation model)
-        # For that, we sample from a Gaussian N(x|W*z+mu, sigma2*I) (Bishop, Tipping, 1999 - Eq. 6)
-        N = X.shape[0]
-        k = self.n_components
-        Xt = torch.zeros((N, k), device=X.device)  # shape (N, k)
+            # M is k x k
+            M = self.W.transpose(0, 1) @ self.W + self.sigma2 * torch.eye(k, device=X.device)
+            M_inv = torch.linalg.inv(M)
 
-        # M is k x k
-        M = self.W.transpose(0, 1) @ self.W + self.sigma2 * torch.eye(k, device=X.device)
-        M_inv = torch.linalg.inv(M)
+            # Gaussian posterior parameters for latent z: mean (k x N), cov (k x k)
+            # TODO: understand why (X - mu)^T and not (X - mu) like in the paper
+            # NB: in the original paper data are columns (D×N), so their (X - mu) corresponds to our (X - mu)^T
+            transform_means = M_inv @ self.W.transpose(0, 1) @ (X - self.mu).transpose(0, 1)  # k x N
+            transform_covariances = self.sigma2 * M_inv  # k x k
 
-        # Gaussian posterior parameters for latent z: mean (k x N), cov (k x k)
-        # TODO: understand why (X - mu)^T and not (X - mu) like in the paper
-        # NB: in the original paper data are columns (D×N), so their (X - mu) corresponds to our (X - mu)^T
-        transform_means = M_inv @ self.W.transpose(0, 1) @ (X - self.mu).transpose(0, 1)  # k x N
-        transform_covariances = self.sigma2 * M_inv  # k x k
+            for i in range(N):
+                mean_i = transform_means[:, i]
+                sample = MultivariateNormal(mean_i, transform_covariances).sample()
+                Xt[i] = sample
 
-        for i in range(N):
-            mean_i = transform_means[:, i]
-            sample = MultivariateNormal(mean_i, transform_covariances).sample()
-            Xt[i] = sample
-
-        return Xt
+            return Xt
     
     def sample(self, n_samples):
         """Sample n_samples from the PPCA model
