@@ -40,17 +40,21 @@ P1
 
 P2
 - [ ] big datasets
-  - [ ] estimate parameters via gradient descent
-  - [ ] implement online EM
-- [ ] other methods
-  - [ ] ..
-  - [ ] ..
+  - [x] estimate parameters via gradient descent
+  - [x] implement online EM
+  - [ ] Use Mnist to show examples
+- [ ] improve the model
+  - [ ] Sparse ppca
+  - [ ] MPPCA
+- [ ] study specific property of the model
+  - [ ] Missing values
+  - [ ] Convergence of algorithms
 - [ ] refining
   - [ ] calculate explained_variance ratio (similar to sklearn PCA)
   - [ ] make a function to display pca axes
 
 P3
-- [ ] implement basic pca in torch 
+- [x] implement basic pca in torch 
 
 ### Experiments
 P1
