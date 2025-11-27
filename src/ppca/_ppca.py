@@ -138,14 +138,13 @@ class PPCA(nn.Module):
         
     def _fit_em(self, X):
         # initialize parameters
-        N, d = X.shape
         self.mu = torch.mean(X, dim=0)  # shape (d,)
-        self.W = torch.randn(d, self.n_components, device=X.device)  # random initialization
+        self.W = torch.randn(self.d, self.n_components, device=X.device)  # random initialization
         self.sigma2 = torch.tensor(1.0, device=X.device)
         print("Starting EM fitting on {} epochs...".format(self.max_iter))
         pbar = tqdm.tqdm(range(self.max_iter), desc="EM", unit="iter")
         for iter in pbar:
-            W = self.W
+            W = self.W.clone()
             self._e_step(X)
             self._m_step(X)
 
