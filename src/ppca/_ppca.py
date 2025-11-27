@@ -26,7 +26,9 @@ class PPCA(nn.Module):
         # EM
         elif self.method == 'em':
             self._fit_em(X)
-        # Other methods can be added here
+        # SGD
+        elif self.method == 'sgd':
+            self._fit_sgd(X)
         else:
             raise NotImplementedError(f"Method {self.method} not implemented.")
     
@@ -161,6 +163,67 @@ class PPCA(nn.Module):
             if W_norm_diff < self.stopping_criterion:
                 pbar.close()
                 break
+            
+    def _fit_sgd(self, X):
+        # initialize parameters for optimization
+        self.W = torch.nn.Parameter(torch.randn(X.shape[1], self.n_components, device=X.device, requires_grad=True))  # random initialization
+        self.mu = torch.nn.Parameter(torch.zeros(X.shape[1], device=X.device, requires_grad=True))  # shape (d,)
+        self.sigma2 = torch.nn.Parameter(torch.tensor(1.0, device=X.device, requires_grad=True))
+        
+        # Define optimizer
+        optimizer = torch.optim.SGD(self.parameters([self.W, self.mu, self.sigma2]), lr=1e-3)
+        
+        print("Starting SGD fitting on {} epochs...".format(self.max_iter))
+        pbar = tqdm.tqdm(range(self.max_iter), desc="SGD", unit="iter")
+        for iter in pbar:
+            optimizer.zero_grad()
+            loss = self._cost_function(X)
+            loss.backward()
+            optimizer.step()
+
+            # Stopping criterion based on change in cost
+            try:
+                pbar.set_postfix({"loss": float(loss.item())})
+            except Exception:
+                # In case of any issue converting tensor to float, ignore
+                pass
+        
+    def _cost_function(self, X):
+        """Compute the negative log-likelihood cost function for PPCA (to be minimized)
+            Bishop, Tipping, 1999 - Eq. 4
+
+        Args:
+            X (tensor): data of shape (N, d)
+        """
+
+        # Centered data
+        Xc = X - self.mu
+
+        # Build model covariance C = W W^T + sigma2 * I (d x d)
+        C = self.W @ self.W.T + torch.abs(self.sigma2) * torch.eye(self.d, device=self.W.device)
+        
+        # Compute S = (1/N) Xc^T Xc (sample covariance)
+        S = (1.0 / self.N) * Xc.T @ Xc
+
+        # Compute log|C| and C^{-1}
+        sign, logabsdet = torch.linalg.slogdet(C)
+        if torch.any(sign <= 0):
+            # If determinant sign is non-positive, add tiny jitter for numerical stability
+            jitter = 1e-6
+            C = C + jitter * torch.eye(self.d, device=C.device)
+            sign, logabsdet = torch.linalg.slogdet(C)
+
+        C_inv = torch.linalg.inv(C)
+        
+        # Compute trace(C^{-1} S)
+        trace_term = torch.trace(C_inv @ S)
+        
+        # Constant term
+        const = self.d * torch.log(torch.tensor(2.0 * torch.pi, device=X.device))
+        
+        cost = self.N / 2.0 * (const + logabsdet + trace_term / self.N)
+        
+        return cost
 
     def transform(self, X):
         # Ensure X is a tensor
