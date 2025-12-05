@@ -63,6 +63,11 @@ class PPCA(nn.Module):
         eig_sort = torch.argsort(eig_val, descending=True)
         U_q = eig_vec[:, eig_sort[:self.n_components]]  # D x q matrix of principal eigenvectors
         Lambda_q = torch.diag(eig_val[eig_sort[:self.n_components]])  # q x q diagonal matrix
+        
+        # enforce deterministic sign: make the largest-abs element positive for each eigenvector
+        max_abs_idx = torch.argmax(torch.abs(U_q), dim=0)                     # (q,)
+        signs = torch.sign(U_q[max_abs_idx, torch.arange(U_q.shape[1])])      # (q,)
+        U_q = U_q * signs.unsqueeze(0) 
           
         # 2. Estimate sigma2 as variance 'lost' in the projection, averaged over the lost dimensions (Bishop, Tipping, 1999 - Eq. 8)
         if self.d > self.n_components:
@@ -299,5 +304,3 @@ class PPCA(nn.Module):
     def fit_transform(self, X):
         self.fit(X)
         return self.transform(X)
-
-
