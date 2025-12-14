@@ -2,3 +2,6 @@
 src/*.egg-info
 src/ppca/__pycache__/
 src/ppca_torch.egg-info/
+
+data/
+.DS_Store
