@@ -13,7 +13,7 @@ X, y = data['data'], data['target']
 
 # PPCA parameters
 n_components = 3
-epochs = 10
+epochs = 500
 
 # PPCA
 Xts = []
