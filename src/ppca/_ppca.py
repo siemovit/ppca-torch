@@ -12,6 +12,7 @@ class PPCA(nn.Module):
         self.max_iter = max_iter
         self.stopping_criterion = stopping_criterion
         print(f"PPCA initialized with n_components={n_components}, method={method}")
+        self.losses = []
         
     def fit(self, X):
         # Ensure X is a tensor
@@ -23,13 +24,14 @@ class PPCA(nn.Module):
             
         # SVD
         if self.method == 'svd':
-            self._fit_eig_decomp(X)
+            W, mu, sigma2 = self._fit_eig_decomp(X)
+            print("cost_svd", self._cost_function(X))
         # EM
         elif self.method == 'em':
-            self._fit_em(X)
+            W, mu, sigma2 = self._fit_em(X)
         # SGD
         elif self.method == 'sgd':
-            self._fit_sgd(X)
+            W, mu, sigma2 = self._fit_sgd(X)
         # BASELINE
         elif self.method == 'baseline':
             self._fit_baseline(X)
@@ -37,11 +39,15 @@ class PPCA(nn.Module):
         else:
             raise NotImplementedError(f"Method {self.method} not implemented.")
         
+        return W, mu, sigma2
+        
     def _fit_baseline(self, X):
         self.pca = PCA(n_components=self.n_components).fit(X.numpy())
         self.W = torch.tensor(self.pca.components_.T, dtype=torch.float32)
         self.mu = torch.tensor(self.pca.mean_, dtype=torch.float32)
         self.sigma2 = torch.tensor(0.0, dtype=torch.float32)
+        
+        return self.W, self.mu, self.sigma2
     
     def _fit_eig_decomp(self, X):
         # Define N and D
@@ -82,6 +88,10 @@ class PPCA(nn.Module):
         adjust = Lambda_q - self.sigma2 * torch.eye(self.n_components, device=X.device)
         adjust = torch.clamp(adjust, min=0.0)
         self.W = U_q @ torch.sqrt(adjust) 
+        
+        self.losses = [self._cost_function(X) for _ in range(self.max_iter)]  # no losses for SVD method
+        
+        return self.W, self.mu, self.sigma2 
         
     def _e_step(self, X):
         """E-step: compute expected values of latent variables given current parameters 
@@ -168,10 +178,14 @@ class PPCA(nn.Module):
 
             # Stopping criterion based on change in W
             W_norm_diff = torch.norm(self.W - W)
+            
+            losses = self._cost_function(X)  # compute log-likelihood
+            self.losses.append(float(losses))
 
             # Update progress bar postfix with the latest change norm
             try:
-                pbar.set_postfix({"W_change": float(W_norm_diff.item())})
+                pbar.set_postfix({"W_change": float(W_norm_diff.item()), "cost": float(losses.item())})
+                
             except Exception:
                 # In case of any issue converting tensor to float, ignore
                 pass
@@ -180,22 +194,28 @@ class PPCA(nn.Module):
                 pbar.close()
                 break
             
+        return self.W, self.mu, self.sigma2
+            
     def _fit_sgd(self, X):
         # initialize parameters for optimization
-        self.W = torch.nn.Parameter(torch.randn(X.shape[1], self.n_components, device=X.device, requires_grad=True))  # random initialization
-        self.mu = torch.nn.Parameter(torch.zeros(X.shape[1], device=X.device, requires_grad=True))  # shape (d,)
-        self.sigma2 = torch.nn.Parameter(torch.tensor(1.0, device=X.device, requires_grad=True))
+        self.W = torch.nn.Parameter(torch.randn(X.shape[1], self.n_components))  # random initialization
+        self.mu = torch.nn.Parameter(torch.mean(X, dim=0)) 
+        self.sigma2 = torch.nn.Parameter(torch.tensor(1.0))
         
         # Define optimizer
-        optimizer = torch.optim.SGD(self.parameters([self.W, self.mu, self.sigma2]), lr=1e-3)
-        
+        optimizer = torch.optim.Adam(
+            [self.W, self.mu, self.sigma2],
+            lr=5e-3,
+        )        
         print("Starting SGD fitting on {} epochs...".format(self.max_iter))
         pbar = tqdm.tqdm(range(self.max_iter), desc="SGD", unit="iter")
+        
         for iter in pbar:
             optimizer.zero_grad()
             loss = self._cost_function(X)
             loss.backward()
             optimizer.step()
+            self.losses.append(float(loss.item()))
 
             # Stopping criterion based on change in cost
             try:
@@ -203,6 +223,8 @@ class PPCA(nn.Module):
             except Exception:
                 # In case of any issue converting tensor to float, ignore
                 pass
+        
+        return self.W, self.mu, self.sigma2
         
     def _cost_function(self, X):
         """Compute the negative log-likelihood cost function for PPCA (to be minimized)
@@ -237,7 +259,7 @@ class PPCA(nn.Module):
         # Constant term
         const = self.d * torch.log(torch.tensor(2.0 * torch.pi, device=X.device))
         
-        cost = self.N / 2.0 * (const + logabsdet + trace_term / self.N)
+        cost = self.N / 2.0 * (const + logabsdet + trace_term )
         
         return cost
 
