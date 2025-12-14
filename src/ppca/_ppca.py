@@ -13,7 +13,7 @@ class PPCA(nn.Module):
         self.stopping_criterion = stopping_criterion
         print(f"PPCA initialized with n_components={n_components}, method={method}")
         self.losses = []
-        
+
     def fit(self, X):
         # Ensure X is a tensor
         if not isinstance(X, torch.Tensor):
