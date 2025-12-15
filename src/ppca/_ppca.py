@@ -34,7 +34,7 @@ class PPCA(nn.Module):
             W, mu, sigma2 = self._fit_gd(X)
         # BASELINE
         elif self.method == 'baseline':
-            self._fit_baseline(X)
+            W, mu, sigma2 = self._fit_baseline(X)
 
         else:
             raise NotImplementedError(f"Method {self.method} not implemented.")

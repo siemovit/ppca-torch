@@ -2,37 +2,57 @@ from ppca import PPCA
 import matplotlib.pyplot as plt
 from sklearn.datasets import load_iris,load_breast_cancer,load_wine
 from sklearn.decomposition import PCA
+import numpy as np
 
 # Loading data
 
-# data = load_iris()
-data = load_breast_cancer()
-# data = load_wine()
+iris = load_iris()
 
-X, y = data['data'], data['target']
+X = iris.data
+y = iris.target
+target_names = iris.target_names
+
+pca = PPCA(n_components=2)
+# pca = PCA(n_components=2)
+X_r = pca.fit_transform(X)
 
 # PPCA parameters
-n_components = 3
-epochs = 500
+n_components = 2
+epochs = 50
 
 # PPCA
 Xts = []
-for method in ['baseline', 'svd', 'em', 'sgd']:
+for method in ['baseline', 'svd', 'em', 'gd']:
     print(f"Running PPCA with method: {method}")
     pca = PPCA(n_components=n_components, method=method, max_iter=epochs)
     Xt = pca.fit_transform(X)
     Xts.append(Xt)
     
     
-# Grouped plots in one figure with two subplots
-fig, axs = plt.subplots(2, 2, figsize=(10, 10))
+# Plot projections for each method
+methods = ['baseline', 'svd', 'em', 'gd']
+lw = 2
 
-for i, method in enumerate(['baseline', 'svd', 'em', 'sgd']):
-    Xt = Xts[i]
-    scatter = axs[i // 2, i % 2].scatter(Xt[:, 0], Xt[:, 1], c=y, cmap='viridis', alpha=0.8)
-    axs[i // 2, i % 2].set_title(f'PPCA Projection (2D) {n_components} components - Method: {method}')
-    axs[i // 2, i % 2].set_xlabel('Principal Component 1')
-    axs[i // 2, i % 2].set_ylabel('Principal Component 2')
-    
+fig, axs = plt.subplots(2, 2, figsize=(10, 10))
+cmap = plt.get_cmap("tab20")
+class_colors = [cmap(i) for i in range(len(target_names))]
+
+for idx, method in enumerate(methods):
+    Xt = Xts[idx]
+    ax = axs[idx // 2, idx % 2]
+
+    # plot each class separately so legend and colors match target_names
+    for cls in np.unique(y):
+        mask = (y == cls)
+        ax.scatter(Xt[mask, 0], Xt[mask, 1],
+                   color=class_colors[int(cls)],
+                   label=target_names[int(cls)],
+                   alpha=0.8, edgecolor='k', linewidths=0.1, s=40)
+
+    ax.set_title(f'{method} - iterations={epochs}')
+    ax.set_xlabel('PC 1')
+    ax.set_ylabel('PC 2')
+    ax.legend(loc='best', fontsize='small')
+
 plt.tight_layout()
 plt.show()
