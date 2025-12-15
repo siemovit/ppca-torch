@@ -36,7 +36,7 @@ for ep in epoch_list:
     X_gen = pca.sample(n_samples=n_samples_per_epoch)
     # clip/binarize for visualization (keep float for smoothing option)
     samples[ep] = X_gen.reshape((-1, 28, 28))
-
+    X_gen = (X_gen > 0.5).float()
 
 # Plot 3 rows (one per epoch) x 4 columns (samples)
 nrows = n_samples_per_epoch
