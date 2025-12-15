@@ -29,9 +29,9 @@ class PPCA(nn.Module):
         # EM
         elif self.method == 'em':
             W, mu, sigma2 = self._fit_em(X)
-        # SGD
-        elif self.method == 'sgd':
-            W, mu, sigma2 = self._fit_sgd(X)
+        # GD
+        elif self.method == 'gd':
+            W, mu, sigma2 = self._fit_gd(X)
         # BASELINE
         elif self.method == 'baseline':
             self._fit_baseline(X)
@@ -196,23 +196,24 @@ class PPCA(nn.Module):
             
         return self.W, self.mu, self.sigma2
             
-    def _fit_sgd(self, X):
+    def _fit_gd(self, X):
         # initialize parameters for optimization
         self.W = torch.nn.Parameter(torch.randn(X.shape[1], self.n_components))  # random initialization
-        self.mu = torch.nn.Parameter(torch.mean(X, dim=0)) 
-        self.sigma2 = torch.nn.Parameter(torch.tensor(1.0))
-        
+        self.mu = torch.nn.Parameter(torch.mean(X, dim=0))
+        self.sigma2 = torch.tensor(0.5)  # positive scalar 
+        self.log_sigma2 = torch.nn.Parameter(torch.log(self.sigma2.detach() + 1e-6))
+
         # Define optimizer
         optimizer = torch.optim.Adam(
-            [self.W, self.mu, self.sigma2],
-            lr=5e-3,
+            [self.W, self.log_sigma2],
+            lr=1e-1, weight_decay=1e-2
         )        
-        print("Starting SGD fitting on {} epochs...".format(self.max_iter))
-        pbar = tqdm.tqdm(range(self.max_iter), desc="SGD", unit="iter")
+        print("Starting gd fitting on {} epochs...".format(self.max_iter))
+        pbar = tqdm.tqdm(range(self.max_iter), desc="gd", unit="iter")
         
         for iter in pbar:
             optimizer.zero_grad()
-            loss = self._cost_function(X)
+            loss = self._cost_function_gd(X)
             loss.backward()
             optimizer.step()
             self.losses.append(float(loss.item()))
@@ -225,6 +226,19 @@ class PPCA(nn.Module):
                 pass
         
         return self.W, self.mu, self.sigma2
+    
+    def _cost_function_gd(self, X):
+        Xc = X - self.mu
+        sigma2 = torch.exp(self.log_sigma2)  # > 0
+        C = self.W @ self.W.T + sigma2 * torch.eye(self.d, device=X.device) + 1e-6*torch.eye(self.d, device=X.device)
+
+        S = (1.0 / self.N) * Xc.T @ Xc
+        sign, logabsdet = torch.linalg.slogdet(C)
+        C_inv = torch.linalg.inv(C)
+        trace_term = torch.trace(C_inv @ S)
+
+        const = self.d * torch.log(torch.tensor(2.0 * torch.pi, device=X.device))
+        return self.N / 2.0 * (const + logabsdet + trace_term)
         
     def _cost_function(self, X):
         """Compute the negative log-likelihood cost function for PPCA (to be minimized)

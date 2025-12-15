@@ -20,10 +20,10 @@ xtest = xtest.reshape((-1, p))
 
 # PPCA parameters
 n_components = 10
-epochs = 10
+epochs = 50
 
 # Run PPCA for each method and keep the fitted models
-methods = ['svd', 'em', 'sgd']
+methods = ['svd', 'em', 'gd']
 models = {}
 thetas = {}
 
@@ -45,17 +45,17 @@ plt.figure(figsize=(8, 6))
 # SVD pseudo-loss (constant)
 svd_model = models.get('svd')
 svd_losses = getattr(svd_model, 'losses', []) or []
-plt.title('Convergence Plot - Comparison of Methods')
+# plt.title('Convergence Plot - Comparison of Methods')
 plt.xlabel('Iterations')
 plt.ylabel('Value')
-# plt.xlim(100, epochs)
+# plt.xlim(20, epochs)
 # plt.ylim(min(40000, min(svd_losses)-1), 200000)
-plt.plot(range(len(svd_losses)), svd_losses, label='SVD Pseudo-loss', color='black')
+plt.plot(range(len(svd_losses)), svd_losses, label='SVD Pseudo-loss', linestyle='--', color='black')
 plt.legend()
-# SGD losses 
-sgd_model = models.get('sgd')
-sgd_losses = getattr(sgd_model, 'losses', []) or []
-plt.plot(range(len(sgd_losses)), sgd_losses, label='SGD Loss', color='green')
+# GD losses 
+gd_model = models.get('gd')
+gd_losses = getattr(gd_model, 'losses', []) or []
+plt.plot(range(len(gd_losses)), gd_losses, label='GD Loss', color='green')
 plt.legend()
 
 # EM log-likelihoods (if present)
