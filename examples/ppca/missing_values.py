@@ -41,22 +41,23 @@ cmap = plt.get_cmap("tab20")
 class_colors = [cmap(i) for i in range(len(target_names))]
 lw = 1.0
 
-for ax, mr in zip(axes, missing_rates):
-    Xm = make_missing(X_orig, mr, seed=seed)
-    pca = PPCA(n_components=2, method='em', max_iter=100)
-    # fit_transform should handle missing values in PPCA implementation
-    X_r = pca.fit_transform(Xm)
+# TODO: fix missing values first in PPCA implementation
+# for ax, mr in zip(axes, missing_rates):
+#     Xm = make_missing(X_orig, mr, seed=seed)
+#     pca = PPCA(n_components=2, method='em', max_iter=100)
+#     # fit_transform should handle missing values in PPCA implementation
+#     X_r = pca.fit_transform(Xm)
 
-    for color, i, target_name in zip(class_colors, [0, 1, 2], target_names):
-        ax.scatter(
-            X_r[y == i, 0], X_r[y == i, 1],
-            color=color, alpha=0.8, lw=lw, label=target_name, s=40
-        )
+#     for color, i, target_name in zip(class_colors, [0, 1, 2], target_names):
+#         ax.scatter(
+#             X_r[y == i, 0], X_r[y == i, 1],
+#             color=color, alpha=0.8, lw=lw, label=target_name, s=40
+#         )
 
-    ax.set_xlabel('PC 1')
-    ax.set_ylabel('PC 2')
-    ax.legend(loc='lower left', fontsize='small')
+#     ax.set_xlabel('PC 1')
+#     ax.set_ylabel('PC 2')
+#     ax.legend(loc='lower left', fontsize='small')
 
-plt.suptitle('PPCA on Iris: no missing, 15% missing, 30% missing', fontsize=14)
-plt.tight_layout()
-plt.show()
+# plt.suptitle('PPCA on Iris: no missing, 15% missing, 30% missing', fontsize=14)
+# plt.tight_layout()
+# plt.show()

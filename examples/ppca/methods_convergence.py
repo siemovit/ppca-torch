@@ -1,4 +1,3 @@
-# ...existing code...
 from ppca import PPCA
 import matplotlib.pyplot as plt
 from sklearn.datasets import load_breast_cancer
