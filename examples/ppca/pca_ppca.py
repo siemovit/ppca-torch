@@ -1,10 +1,10 @@
-import os
-import sys
 import numpy as np
 from ppca import PCA, PPCA
 import torch
 torch.random.manual_seed(0)
 from torch.distributions import MultivariateNormal
+import matplotlib.pyplot as plt
+
 
 # Parameters
 mean = [0, 0]
@@ -62,8 +62,6 @@ z_mean = (M_inv @ W_mat.T @ (X - mu_ppca2).T).T   # (N,1)
 Xrec_ppca2 = (z_mean @ W_mat.T) + mu_ppca2         # (N,2)
 
 # Plot data and projections
-import matplotlib.pyplot as plt
-
 # golden ratio for nice figure
 phi = (1 + 5 ** 0.5) / 2
 width = 6

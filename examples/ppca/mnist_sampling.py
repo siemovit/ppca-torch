@@ -16,7 +16,7 @@ xvalid = xvalid.reshape((-1, p))
 xtest = xtest.reshape((-1, p))
 
 # PPCA parameters
-n_components = 10 # ten digits in MNIST
+n_components = 30 
 epoch_list = [2, 5, 10, 20, 50]
 n_samples_per_epoch = 3
 method = 'em'
